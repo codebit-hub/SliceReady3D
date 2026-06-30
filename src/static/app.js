@@ -4,8 +4,6 @@ themeToggle.addEventListener('click', () => {
     const isDark = document.body.getAttribute('data-theme') === 'dark';
     document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
     themeToggle.innerText = isDark ? '🌙' : '☀️';
-
-    // Update Three.js background to match theme
     scene.background = new THREE.Color(isDark ? 0xe0e5ec : 0x2a2a2a);
 });
 
@@ -17,7 +15,7 @@ scene.background = new THREE.Color(0xe0e5ec);
 const aspect = container.clientWidth / container.clientHeight;
 const camera = new THREE.PerspectiveCamera(45, aspect, 1, 5000);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(container.clientWidth, container.clientHeight);
 container.appendChild(renderer.domElement);
 
@@ -44,13 +42,15 @@ window.addEventListener('resize', () => {
     renderer.setSize(container.clientWidth, container.clientHeight);
 });
 
-// --- Application Logic ---
+// --- Application Logic & Variables ---
 let currentMesh = null;
 let cachedBlueprint = null;
+let currentFilename = "mosaic";
 
 const uploadForm = document.getElementById('upload-form');
 const modeSelector = document.getElementById('render-mode');
 const inventoryContainer = document.getElementById('inventory-container');
+const exportContainer = document.getElementById('export-container');
 const inventoryGrid = document.getElementById('inventory-grid');
 
 modeSelector.addEventListener('change', () => {
@@ -58,6 +58,7 @@ modeSelector.addEventListener('change', () => {
 });
 
 uploadForm.addEventListener('submit', async (e) => {
+    // This stops the page from refreshing!
     e.preventDefault();
 
     const fileInput = document.getElementById('image-input');
@@ -66,9 +67,12 @@ uploadForm.addEventListener('submit', async (e) => {
 
     if (fileInput.files.length === 0) return;
 
+    currentFilename = fileInput.files[0].name.split('.')[0];
+
     statusBox.style.display = 'block';
     inventoryContainer.style.display = 'none';
-    statusBox.innerText = 'Uploading and computing heuristics...';
+    exportContainer.style.display = 'none';
+    statusBox.innerText = 'Uploading and computing optimization heuristics...';
     loadingOverlay.style.display = 'flex';
 
     const formData = new FormData();
@@ -90,13 +94,19 @@ uploadForm.addEventListener('submit', async (e) => {
         cachedBlueprint = await blueprintRes.json();
         buildLegoScene(cachedBlueprint);
 
-        // Update Status Box
-        const total = cachedBlueprint.width * cachedBlueprint.height;
-        const layers = data.mosaic_data.layers;
-        statusBox.innerText = `Done — ${total} studs, ${layers} depth layers, backend: luminance + edge heuristic.`;
+        const origCount = data.mosaic_data.original_count;
+        const optCount = data.mosaic_data.optimized_count;
+        const savedPercent = (((origCount - optCount) / origCount) * 100).toFixed(1);
 
-        // Render Inventory
+        statusBox.innerHTML = `
+            <b>Optimization Complete</b><br>
+            Original 1x1 Studs: ${origCount}<br>
+            Optimized Bricks: ${optCount}<br>
+            <span style="color: #2e7d32;">Saved ${origCount - optCount} physical bricks (${savedPercent}%)</span>
+        `;
+
         renderInventory(data.mosaic_data.inventory);
+        exportContainer.style.display = 'block';
 
     } catch (error) {
         statusBox.innerText = 'Error: ' + error.message;
@@ -107,7 +117,7 @@ uploadForm.addEventListener('submit', async (e) => {
 
 function renderInventory(inventory) {
     inventoryContainer.style.display = 'block';
-    inventoryGrid.innerHTML = ''; // Clear previous
+    inventoryGrid.innerHTML = '';
 
     inventory.forEach(item => {
         const div = document.createElement('div');
@@ -126,49 +136,47 @@ function buildLegoScene(blueprint) {
         currentMesh.dispose();
     }
 
-    const { width, height, layers, colors } = blueprint;
-    const totalBlocks = width * height;
+    const { width, height, blocks } = blueprint;
     const mode = modeSelector.value;
 
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    currentMesh = new THREE.InstancedMesh(geometry, material, totalBlocks);
+    currentMesh = new THREE.InstancedMesh(geometry, material, blocks.length);
 
     const dummy = new THREE.Object3D();
     const colorObj = new THREE.Color();
     let instanceId = 0;
     const zScale = 4;
 
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const zLayer = layers[y][x] + 1;
-            const [b, g, r] = colors[y * width + x];
+    for (const block of blocks) {
+        const zLayer = block.z + 1;
+        const [b, g, r] = block.color;
+        const blockWidth = block.w;
 
-            const posX = x - (width / 2);
-            const posY = -(y - (height / 2));
-            let posZ = 0;
+        const posX = (block.x + (blockWidth - 1) / 2) - (width / 2);
+        const posY = -(block.y - (height / 2));
+        let posZ = 0;
 
-            if (mode === 'solid') {
-                const totalDepth = zLayer * zScale;
-                posZ = totalDepth / 2;
-                dummy.scale.set(0.95, 0.95, totalDepth);
-            } else if (mode === 'floating') {
-                posZ = zLayer * zScale;
-                dummy.scale.set(0.9, 0.9, 1.0);
-            } else if (mode === 'flat') {
-                posZ = 0;
-                dummy.scale.set(0.95, 0.95, 0.5);
-            }
-
-            dummy.position.set(posX, posY, posZ);
-            dummy.updateMatrix();
-            currentMesh.setMatrixAt(instanceId, dummy.matrix);
-
-            colorObj.setRGB(r / 255, g / 255, b / 255);
-            currentMesh.setColorAt(instanceId, colorObj);
-
-            instanceId++;
+        if (mode === 'solid') {
+            const totalDepth = zLayer * zScale;
+            posZ = totalDepth / 2;
+            dummy.scale.set(blockWidth * 0.95, 0.95, totalDepth);
+        } else if (mode === 'floating') {
+            posZ = zLayer * zScale;
+            dummy.scale.set(blockWidth * 0.95, 0.95, 1.0);
+        } else if (mode === 'flat') {
+            posZ = 0;
+            dummy.scale.set(blockWidth * 0.95, 0.95, 0.5);
         }
+
+        dummy.position.set(posX, posY, posZ);
+        dummy.updateMatrix();
+        currentMesh.setMatrixAt(instanceId, dummy.matrix);
+
+        colorObj.setRGB(r / 255, g / 255, b / 255);
+        currentMesh.setColorAt(instanceId, colorObj);
+
+        instanceId++;
     }
 
     currentMesh.instanceMatrix.needsUpdate = true;
@@ -179,3 +187,42 @@ function buildLegoScene(blueprint) {
     controls.target.set(0, 0, 0);
     controls.update();
 }
+
+// --- Export Logic (Bonus 3) ---
+function downloadFile(blob, filename) {
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+document.getElementById('btn-export-png').addEventListener('click', () => {
+    renderer.render(scene, camera);
+    const dataURL = renderer.domElement.toDataURL('image/png');
+
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = `${currentFilename}_3d_snapshot.png`;
+    link.click();
+});
+
+document.getElementById('btn-export-json').addEventListener('click', () => {
+    if (!cachedBlueprint) return;
+    const jsonStr = JSON.stringify(cachedBlueprint, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    downloadFile(blob, `${currentFilename}_blueprint.json`);
+});
+
+document.getElementById('btn-export-mesh').addEventListener('click', () => {
+    if (!currentMesh) return;
+
+    const exporter = new THREE.GLTFExporter();
+    exporter.parse(scene, (gltf) => {
+        const jsonStr = JSON.stringify(gltf);
+        const blob = new Blob([jsonStr], { type: 'text/plain' });
+        downloadFile(blob, `${currentFilename}_3d_mesh.gltf`);
+    }, { binary: false });
+});
