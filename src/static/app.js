@@ -1,3 +1,14 @@
+// --- Theme Toggle Logic ---
+const themeToggle = document.getElementById('theme-toggle');
+themeToggle.addEventListener('click', () => {
+    const isDark = document.body.getAttribute('data-theme') === 'dark';
+    document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    themeToggle.innerText = isDark ? '🌙' : '☀️';
+
+    // Update Three.js background to match theme
+    scene.background = new THREE.Color(isDark ? 0xe0e5ec : 0x2a2a2a);
+});
+
 // --- Three.js Scene Setup ---
 const container = document.getElementById('scene-container');
 const scene = new THREE.Scene();
@@ -14,7 +25,7 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(200, 300, 400);
@@ -35,16 +46,15 @@ window.addEventListener('resize', () => {
 
 // --- Application Logic ---
 let currentMesh = null;
-let cachedBlueprint = null; // Stores data so we can switch modes instantly
+let cachedBlueprint = null;
 
 const uploadForm = document.getElementById('upload-form');
 const modeSelector = document.getElementById('render-mode');
+const inventoryContainer = document.getElementById('inventory-container');
+const inventoryGrid = document.getElementById('inventory-grid');
 
-// If the user changes the dropdown, instantly redraw the scene if data exists
 modeSelector.addEventListener('change', () => {
-    if (cachedBlueprint) {
-        buildLegoScene(cachedBlueprint);
-    }
+    if (cachedBlueprint) buildLegoScene(cachedBlueprint);
 });
 
 uploadForm.addEventListener('submit', async (e) => {
@@ -57,24 +67,18 @@ uploadForm.addEventListener('submit', async (e) => {
     if (fileInput.files.length === 0) return;
 
     statusBox.style.display = 'block';
-    statusBox.className = 'status-info';
-    statusBox.innerText = 'Uploading and processing pipeline...';
+    inventoryContainer.style.display = 'none';
+    statusBox.innerText = 'Uploading and computing heuristics...';
     loadingOverlay.style.display = 'flex';
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
 
     try {
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        });
-
+        const response = await fetch('/api/upload', { method: 'POST', body: formData });
         const data = await response.json();
 
         if (!response.ok) throw new Error(data.detail || 'Processing failed');
-
-        statusBox.innerText = 'Fetching 3D structural data...';
 
         const rawPath = data.mosaic_data.scene_data;
         const filename = rawPath.split('/').pop();
@@ -83,20 +87,38 @@ uploadForm.addEventListener('submit', async (e) => {
         const blueprintRes = await fetch(sceneDataPath);
         if (!blueprintRes.ok) throw new Error('Failed to fetch 3D blueprint data.');
 
-        // Cache the blueprint for instant mode switching
         cachedBlueprint = await blueprintRes.json();
-
         buildLegoScene(cachedBlueprint);
 
+        // Update Status Box
         const total = cachedBlueprint.width * cachedBlueprint.height;
-        statusBox.innerText = `Success: Built ${total} blocks.`;
+        const layers = data.mosaic_data.layers;
+        statusBox.innerText = `Done — ${total} studs, ${layers} depth layers, backend: luminance + edge heuristic.`;
+
+        // Render Inventory
+        renderInventory(data.mosaic_data.inventory);
+
     } catch (error) {
-        statusBox.className = 'status-error';
         statusBox.innerText = 'Error: ' + error.message;
     } finally {
         loadingOverlay.style.display = 'none';
     }
 });
+
+function renderInventory(inventory) {
+    inventoryContainer.style.display = 'block';
+    inventoryGrid.innerHTML = ''; // Clear previous
+
+    inventory.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'inventory-item';
+        div.innerHTML = `
+            <div class="color-swatch" style="background-color: ${item.hex};"></div>
+            <span>${item.name} <b>×${item.count}</b></span>
+        `;
+        inventoryGrid.appendChild(div);
+    });
+}
 
 function buildLegoScene(blueprint) {
     if (currentMesh) {
@@ -106,7 +128,7 @@ function buildLegoScene(blueprint) {
 
     const { width, height, layers, colors } = blueprint;
     const totalBlocks = width * height;
-    const mode = modeSelector.value; // Read the current artistic mode
+    const mode = modeSelector.value;
 
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
@@ -115,29 +137,27 @@ function buildLegoScene(blueprint) {
     const dummy = new THREE.Object3D();
     const colorObj = new THREE.Color();
     let instanceId = 0;
-
     const zScale = 4;
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const zLayer = layers[y][x] + 1; // Base level is 1
+            const zLayer = layers[y][x] + 1;
             const [b, g, r] = colors[y * width + x];
 
             const posX = x - (width / 2);
             const posY = -(y - (height / 2));
             let posZ = 0;
 
-            // Apply different mathematics based on the chosen mode
             if (mode === 'solid') {
                 const totalDepth = zLayer * zScale;
-                posZ = totalDepth / 2; // Shift forward so backs align at 0
-                dummy.scale.set(0.95, 0.95, totalDepth); // Extrude
+                posZ = totalDepth / 2;
+                dummy.scale.set(0.95, 0.95, totalDepth);
             } else if (mode === 'floating') {
                 posZ = zLayer * zScale;
-                dummy.scale.set(0.9, 0.9, 1.0); // Standard 1x1 cube
+                dummy.scale.set(0.9, 0.9, 1.0);
             } else if (mode === 'flat') {
-                posZ = 0; // Everything on the same baseplate
-                dummy.scale.set(0.95, 0.95, 0.5); // Thin tiles
+                posZ = 0;
+                dummy.scale.set(0.95, 0.95, 0.5);
             }
 
             dummy.position.set(posX, posY, posZ);
@@ -155,7 +175,6 @@ function buildLegoScene(blueprint) {
     currentMesh.instanceColor.needsUpdate = true;
     scene.add(currentMesh);
 
-    // Reset camera position to view the new geometry properly
     camera.position.set(width * 0.8, height * 0.8, width * 1.2);
     controls.target.set(0, 0, 0);
     controls.update();
