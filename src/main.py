@@ -1,21 +1,43 @@
 import os
-from typing import Annotated, Dict, Any
+from typing import Annotated, Any
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.depth_pipeline import estimate_depth
-from src.quantization import quantize_image  # <-- New import
+from src.quantization import quantize_image
 
 app = FastAPI(title="SliceReady3D API")
 
 UPLOAD_DIR = "src/uploads"
 OUTPUT_DIR = "src/outputs"
-# Path to our new JSON palette
 PALETTE_PATH = "src/palette.json"
+STATIC_DIR = "src/static"
 
+# Ensure all necessary directories exist
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+# Mount static directories so the browser can request these files
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+
+
+@app.get("/")
+async def serve_index() -> FileResponse:
+    """
+    Serves the main frontend HTML file at the root URL.
+    This fulfills Mandatory V.6 User Experience flow.
+    """
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if not os.path.exists(index_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Frontend index.html not found."
+        )
+    return FileResponse(index_path)
 
 
 @app.post("/api/upload")
@@ -58,9 +80,9 @@ async def upload_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Depth error: {str(e)}")
 
-    # 3. Quantize and Map to LEGO Colors (New Step)
+    # 3. Quantize and Map to LEGO Colors
     try:
-        mosaic_data: Dict[str, Any] = quantize_image(
+        mosaic_data: dict[str, Any] = quantize_image(
             original_path,
             saved_depth_path,
             PALETTE_PATH
@@ -69,7 +91,7 @@ async def upload_image(
         error_msg = f"Quantization failed: {str(e)}"
         raise HTTPException(status_code=500, detail=error_msg)
 
-    # 4. Return combined results
+    # 4. Return combined results to the frontend
     return JSONResponse(
         status_code=200,
         content={

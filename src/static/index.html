@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SliceReady3D - Voxel Constructor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0; padding: 0;
+            display: flex; height: 100vh;
+            background-color: #f0f2f5;
+        }
+        #sidebar {
+            width: 300px; background: white;
+            padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            display: flex; flex-direction: column; z-index: 10;
+        }
+        #scene-container {
+            flex-grow: 1; position: relative;
+            background-color: #e0e5ec;
+        }
+        canvas { display: block; width: 100%; height: 100%; outline: none; }
+        h1 { font-size: 20px; color: #333; margin-top: 0; }
+        .form-group { margin-bottom: 20px; }
+        label { font-size: 14px; font-weight: bold; color: #555; display: block; margin-bottom: 5px; }
+        select, input[type="file"] { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button {
+            width: 100%; padding: 12px; background-color: #ff5252;
+            color: white; border: none; border-radius: 4px;
+            font-weight: bold; cursor: pointer; font-size: 16px;
+        }
+        button:hover { background-color: #e04040; }
+        #status {
+            margin-top: 15px; font-size: 14px;
+            padding: 10px; border-radius: 4px; display: none;
+        }
+        .status-info { background-color: #e3f2fd; color: #0d47a1; }
+        .status-error { background-color: #ffebee; color: #c62828; }
+        #loading-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.8); display: none;
+            justify-content: center; align-items: center;
+            font-size: 24px; font-weight: bold; color: #333; z-index: 5;
+        }
+        #controls-hint {
+            position: absolute; bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6); color: white;
+            padding: 10px 20px; border-radius: 20px;
+            font-size: 13px; text-align: center;
+            pointer-events: none;
+            display: flex; gap: 15px; z-index: 2;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h1>SliceReady3D Pipeline</h1>
+        <p style="font-size: 13px; color: #666;">Convert flat images into layered 3D voxel mosaics.</p>
+
+        <form id="upload-form">
+            <div class="form-group">
+                <label for="image-input">1. Upload Image</label>
+                <input type="file" id="image-input" accept="image/png, image/jpeg, image/webp" required>
+            </div>
+
+            <div class="form-group">
+                <label for="render-mode">2. Artistic Mode (Bonus 4)</label>
+                <select id="render-mode">
+                    <option value="solid">Voxel Sculpture (3D Printable)</option>
+                    <option value="floating">2.5D Exploded Heightmap</option>
+                    <option value="flat">Traditional Flat Mosaic</option>
+                </select>
+            </div>
+
+            <button type="submit">Generate 3D Scene</button>
+        </form>
+
+        <div id="status"></div>
+    </div>
+
+    <div id="scene-container">
+        <div id="loading-overlay">Computing Volume...</div>
+        <div id="controls-hint">
+            <span>🖱️ <b>Left Click & Drag</b>: Rotate</span>
+            <span>🖱️ <b>Right Click & Drag</b>: Pan</span>
+            <span>↕️ <b>Scroll</b>: Zoom</span>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
