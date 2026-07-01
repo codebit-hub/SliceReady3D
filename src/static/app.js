@@ -1,7 +1,7 @@
-// Global variables for Three.js so they remain accessible everywhere
 let scene, camera, renderer, controls;
 let currentMesh = null;
 let cachedBlueprint = null;
+let cachedInventory = null; // Added to store inventory for printing
 let currentFilename = "mosaic";
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -93,7 +93,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (fileInput.files.length === 0) return;
             currentFilename = fileInput.files[0].name.split('.')[0];
 
-            // Explicitly show the status box during loading
             statusBox.style.display = 'block';
             statusBox.style.color = "var(--text-main)";
             inventoryContainer.style.display = 'none';
@@ -118,9 +117,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!blueprintRes.ok) throw new Error('Failed to fetch 3D data.');
 
                 cachedBlueprint = await blueprintRes.json();
+                cachedInventory = data.mosaic_data.inventory; // Cache for printing
                 buildLegoScene(cachedBlueprint);
 
-                // Populate the Status box with correct success metrics
                 const studs = data.mosaic_data.original_count || 0;
                 const layers = data.mosaic_data.layers || inputLayers.value;
 
@@ -130,11 +129,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </span>
                 `;
 
-                renderInventory(data.mosaic_data.inventory);
+                renderInventory(cachedInventory);
                 exportContainer.style.display = 'block';
 
             } catch (err) {
-                // Ensure the status box remains visible to show the error
                 statusBox.style.display = 'block';
                 statusBox.innerHTML = `<span style="color: #d32f2f;">Error: ${err.message}</span>`;
             } finally {
@@ -142,6 +140,75 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // --- Bonus 1: Assembly Guide Logic ---
+    document.getElementById('btn-print-guide').addEventListener('click', () => {
+        if (!cachedBlueprint || !cachedInventory) return;
+
+        const printArea = document.getElementById('print-area');
+        const { width, height, blocks } = cachedBlueprint;
+
+        let htmlContent = `
+            <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+                <h1>SliceReady3D Assembly Guide</h1>
+                <p>Project: <b>${currentFilename}</b> | Dimensions: ${width}x${height} studs</p>
+
+                <h2>Master Inventory</h2>
+                <ul style="display: flex; flex-wrap: wrap; gap: 15px; list-style: none; padding: 0;">
+        `;
+
+        cachedInventory.forEach(item => {
+            htmlContent += `
+                <li style="display: flex; align-items: center; gap: 5px;">
+                    <div style="width: 15px; height: 15px; background-color: ${item.hex}; border: 1px solid #000;"></div>
+                    <span>${item.name}: <b>x${item.count}</b></span>
+                </li>
+            `;
+        });
+        htmlContent += `</ul>`;
+
+        // Group blocks by Z layer
+        const maxZ = Math.max(...blocks.map(b => b.z));
+        for (let z = 0; z <= maxZ; z++) {
+            const layerBlocks = blocks.filter(b => b.z === z);
+            if (layerBlocks.length === 0) continue;
+
+            htmlContent += `
+                <div class="page-break"></div>
+                <h2>Step ${z + 1}: Layer ${z + 1}</h2>
+                <p>Total pieces in this layer: ${layerBlocks.length}</p>
+                <div style="position: relative; width: 100%; padding-bottom: ${(height / width) * 100}%; background-color: #f5f5f5; border: 2px solid #ccc; margin-bottom: 20px;">
+            `;
+
+            layerBlocks.forEach(b => {
+                const leftPos = (b.x / width) * 100;
+                const topPos = (b.y / height) * 100;
+                const bWidth = (b.w / width) * 100;
+                const bHeight = (1 / height) * 100;
+                const hexColor = `rgb(${b.color[0]}, ${b.color[1]}, ${b.color[2]})`;
+
+                htmlContent += `
+                    <div style="
+                        position: absolute;
+                        left: ${leftPos}%;
+                        top: ${topPos}%;
+                        width: ${bWidth}%;
+                        height: ${bHeight}%;
+                        background-color: ${hexColor};
+                        border: 1px solid rgba(0,0,0,0.3);
+                        box-sizing: border-box;
+                    "></div>
+                `;
+            });
+            htmlContent += `</div>`;
+        }
+
+        htmlContent += `</div>`;
+        printArea.innerHTML = htmlContent;
+
+        // Trigger browser print dialog
+        window.print();
+    });
 
     // --- Export Logic ---
     function downloadFile(blob, filename) {

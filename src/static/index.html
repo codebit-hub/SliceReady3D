@@ -65,7 +65,6 @@
             box-sizing: border-box;
         }
 
-        /* Added specific text styling for the upload constraints */
         .upload-limits {
             font-size: 12px; color: var(--text-muted);
             margin-top: -5px; margin-bottom: 10px; display: block;
@@ -85,8 +84,9 @@
         button.primary:hover { background-color: var(--btn-hover); }
         button.secondary { background-color: var(--btn-secondary); color: white; margin-bottom: 8px; }
         button.secondary:hover { opacity: 0.9; }
+        button.success { background-color: #2e7d32; color: white; margin-bottom: 8px; }
+        button.success:hover { background-color: #1b5e20; }
 
-        /* The Status Field is styled here */
         #status {
             margin-top: 15px; font-size: 13px; font-weight: bold;
             padding: 10px; border-radius: 4px; display: none;
@@ -119,9 +119,6 @@
             padding: 8px 16px; border-radius: 20px; font-size: 12px;
             pointer-events: none; display: flex; gap: 15px; z-index: 2; white-space: nowrap;
         }
-        @media (max-width: 600px) {
-            #controls-hint { flex-direction: column; gap: 5px; bottom: 10px; }
-        }
 
         .btn-text {
             background: none; border: none; color: var(--btn-secondary);
@@ -129,6 +126,20 @@
             text-decoration: underline; font-weight: normal;
         }
         .btn-text:hover { color: var(--btn-primary); }
+
+        /* --- PRINT CSS RULES --- */
+        #print-area { display: none; }
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area {
+                display: block; position: absolute; left: 0; top: 0;
+                width: 100%; color: black; background: white;
+            }
+            .page-break { page-break-before: always; }
+            /* Force background colors to print for the blocks */
+            * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
     </style>
 </head>
 <body>
@@ -170,11 +181,6 @@
                     </select>
                 </div>
 
-                <div class="checkbox-group">
-                    <input type="checkbox" id="ai-palette" disabled>
-                    <label for="ai-palette" style="margin: 0; color: var(--text-muted);">AI-Curated Palette (Coming Soon)</label>
-                </div>
-
                 <button type="submit" class="primary">Build Mosaic</button>
             </form>
 
@@ -183,6 +189,7 @@
             <div id="export-container">
                 <label>Scene Export</label>
                 <div style="margin-top: 10px;">
+                    <button id="btn-print-guide" class="success">🖨️ Print Assembly Guide</button>
                     <button id="btn-export-mesh" class="secondary">🧊 Download 3D Mesh (GLTF)</button>
                     <button id="btn-export-png" class="secondary">📷 Download Snapshot (PNG)</button>
                     <button id="btn-export-json" class="secondary">📄 Download Blueprint (JSON)</button>
@@ -204,6 +211,8 @@
             </div>
         </div>
     </div>
+
+    <div id="print-area"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
