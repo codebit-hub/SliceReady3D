@@ -1,123 +1,186 @@
-// --- Theme Toggle Logic ---
-const themeToggle = document.getElementById('theme-toggle');
-themeToggle.addEventListener('click', () => {
-    const isDark = document.body.getAttribute('data-theme') === 'dark';
-    document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
-    themeToggle.innerText = isDark ? '🌙' : '☀️';
-    scene.background = new THREE.Color(isDark ? 0xe0e5ec : 0x2a2a2a);
-});
-
-// --- Three.js Scene Setup ---
-const container = document.getElementById('scene-container');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe0e5ec);
-
-const aspect = container.clientWidth / container.clientHeight;
-const camera = new THREE.PerspectiveCamera(45, aspect, 1, 5000);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setSize(container.clientWidth, container.clientHeight);
-container.appendChild(renderer.domElement);
-
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(200, 300, 400);
-scene.add(dirLight);
-
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-}
-animate();
-
-window.addEventListener('resize', () => {
-    camera.aspect = container.clientWidth / container.clientHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
-});
-
-// --- Application Logic & Variables ---
+// Global variables for Three.js so they remain accessible everywhere
+let scene, camera, renderer, controls;
 let currentMesh = null;
 let cachedBlueprint = null;
 let currentFilename = "mosaic";
 
-const uploadForm = document.getElementById('upload-form');
-const modeSelector = document.getElementById('render-mode');
-const inventoryContainer = document.getElementById('inventory-container');
-const exportContainer = document.getElementById('export-container');
-const inventoryGrid = document.getElementById('inventory-grid');
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Theme Toggle ---
+    const themeToggle = document.getElementById('theme-toggle');
+    themeToggle.addEventListener('click', () => {
+        const isDark = document.body.getAttribute('data-theme') === 'dark';
+        document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        themeToggle.innerText = isDark ? '🌙' : '☀️';
+        if (scene) scene.background = new THREE.Color(isDark ? 0xe0e5ec : 0x2a2a2a);
+    });
 
-modeSelector.addEventListener('change', () => {
-    if (cachedBlueprint) buildLegoScene(cachedBlueprint);
-});
+    // --- Three.js Setup ---
+    const container = document.getElementById('scene-container');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xe0e5ec);
 
-uploadForm.addEventListener('submit', async (e) => {
-    // This stops the page from refreshing!
-    e.preventDefault();
+    const aspect = container.clientWidth / container.clientHeight;
+    camera = new THREE.PerspectiveCamera(45, aspect, 1, 5000);
 
-    const fileInput = document.getElementById('image-input');
-    const statusBox = document.getElementById('status');
-    const loadingOverlay = document.getElementById('loading-overlay');
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
 
-    if (fileInput.files.length === 0) return;
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
 
-    currentFilename = fileInput.files[0].name.split('.')[0];
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(200, 300, 400);
+    scene.add(dirLight);
 
-    statusBox.style.display = 'block';
-    inventoryContainer.style.display = 'none';
-    exportContainer.style.display = 'none';
-    statusBox.innerText = 'Uploading and computing optimization heuristics...';
-    loadingOverlay.style.display = 'flex';
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    try {
-        const response = await fetch('/api/upload', { method: 'POST', body: formData });
-        const data = await response.json();
-
-        if (!response.ok) throw new Error(data.detail || 'Processing failed');
-
-        const rawPath = data.mosaic_data.scene_data;
-        const filename = rawPath.split('/').pop();
-        const sceneDataPath = '/outputs/' + filename;
-
-        const blueprintRes = await fetch(sceneDataPath);
-        if (!blueprintRes.ok) throw new Error('Failed to fetch 3D blueprint data.');
-
-        cachedBlueprint = await blueprintRes.json();
-        buildLegoScene(cachedBlueprint);
-
-        const origCount = data.mosaic_data.original_count;
-        const optCount = data.mosaic_data.optimized_count;
-        const savedPercent = (((origCount - optCount) / origCount) * 100).toFixed(1);
-
-        statusBox.innerHTML = `
-            <b>Optimization Complete</b><br>
-            Original 1x1 Studs: ${origCount}<br>
-            Optimized Bricks: ${optCount}<br>
-            <span style="color: #2e7d32;">Saved ${origCount - optCount} physical bricks (${savedPercent}%)</span>
-        `;
-
-        renderInventory(data.mosaic_data.inventory);
-        exportContainer.style.display = 'block';
-
-    } catch (error) {
-        statusBox.innerText = 'Error: ' + error.message;
-    } finally {
-        loadingOverlay.style.display = 'none';
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
     }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // --- Dynamic Slider Values & Reset Logic ---
+    const inputLayers = document.getElementById('input-layers');
+    const valLayers = document.getElementById('val-layers');
+    const inputStuds = document.getElementById('input-studs');
+    const valStuds = document.getElementById('val-studs');
+    const btnReset = document.getElementById('btn-reset-sliders');
+
+    if (inputLayers && valLayers) {
+        inputLayers.addEventListener('input', (e) => { valLayers.innerText = e.target.value; });
+    }
+    if (inputStuds && valStuds) {
+        inputStuds.addEventListener('input', (e) => { valStuds.innerText = e.target.value; });
+    }
+
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            inputLayers.value = 6;
+            valLayers.innerText = '6';
+            inputStuds.value = 48;
+            valStuds.innerText = '48';
+        });
+    }
+
+    // --- App Logic ---
+    const uploadForm = document.getElementById('upload-form');
+    const modeSelector = document.getElementById('render-mode');
+    const inventoryContainer = document.getElementById('inventory-container');
+    const exportContainer = document.getElementById('export-container');
+    const statusBox = document.getElementById('status');
+    const loadOverlay = document.getElementById('loading-overlay');
+    const fileInput = document.getElementById('image-input');
+
+    if (modeSelector) {
+        modeSelector.addEventListener('change', () => {
+            if (cachedBlueprint) buildLegoScene(cachedBlueprint);
+        });
+    }
+
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (fileInput.files.length === 0) return;
+            currentFilename = fileInput.files[0].name.split('.')[0];
+
+            // Explicitly show the status box during loading
+            statusBox.style.display = 'block';
+            statusBox.style.color = "var(--text-main)";
+            inventoryContainer.style.display = 'none';
+            exportContainer.style.display = 'none';
+            statusBox.innerText = 'Uploading and computing heuristics...';
+            loadOverlay.style.display = 'flex';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('depth_layers', inputLayers.value);
+            formData.append('max_studs', inputStuds.value);
+
+            try {
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.detail || 'Processing failed');
+
+                const rawPath = data.mosaic_data.scene_data;
+                const blueprintRes = await fetch('/outputs/' + rawPath.split('/').pop());
+
+                if (!blueprintRes.ok) throw new Error('Failed to fetch 3D data.');
+
+                cachedBlueprint = await blueprintRes.json();
+                buildLegoScene(cachedBlueprint);
+
+                // Populate the Status box with correct success metrics
+                const studs = data.mosaic_data.original_count || 0;
+                const layers = data.mosaic_data.layers || inputLayers.value;
+
+                statusBox.innerHTML = `
+                    <span style="color: #2e7d32;">
+                        Done - ${studs} studs, ${layers} depth layers, depth backend: luminance + edge heuristic.
+                    </span>
+                `;
+
+                renderInventory(data.mosaic_data.inventory);
+                exportContainer.style.display = 'block';
+
+            } catch (err) {
+                // Ensure the status box remains visible to show the error
+                statusBox.style.display = 'block';
+                statusBox.innerHTML = `<span style="color: #d32f2f;">Error: ${err.message}</span>`;
+            } finally {
+                loadOverlay.style.display = 'none';
+            }
+        });
+    }
+
+    // --- Export Logic ---
+    function downloadFile(blob, filename) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+    }
+
+    document.getElementById('btn-export-png').addEventListener('click', () => {
+        renderer.render(scene, camera);
+        const link = document.createElement('a');
+        link.href = renderer.domElement.toDataURL('image/png');
+        link.download = `${currentFilename}_3d_snapshot.png`;
+        link.click();
+    });
+
+    document.getElementById('btn-export-json').addEventListener('click', () => {
+        if (!cachedBlueprint) return;
+        const blob = new Blob([JSON.stringify(cachedBlueprint, null, 2)], { type: 'application/json' });
+        downloadFile(blob, `${currentFilename}_blueprint.json`);
+    });
+
+    document.getElementById('btn-export-mesh').addEventListener('click', () => {
+        if (!currentMesh) return;
+        new THREE.GLTFExporter().parse(scene, (gltf) => {
+            const blob = new Blob([JSON.stringify(gltf)], { type: 'text/plain' });
+            downloadFile(blob, `${currentFilename}_3d_mesh.gltf`);
+        }, { binary: false });
+    });
 });
 
 function renderInventory(inventory) {
+    const inventoryContainer = document.getElementById('inventory-container');
+    const grid = document.getElementById('inventory-grid');
+    if (!inventoryContainer || !grid) return;
+
     inventoryContainer.style.display = 'block';
-    inventoryGrid.innerHTML = '';
+    grid.innerHTML = '';
 
     inventory.forEach(item => {
         const div = document.createElement('div');
@@ -126,58 +189,54 @@ function renderInventory(inventory) {
             <div class="color-swatch" style="background-color: ${item.hex};"></div>
             <span>${item.name} <b>×${item.count}</b></span>
         `;
-        inventoryGrid.appendChild(div);
+        grid.appendChild(div);
     });
 }
 
 function buildLegoScene(blueprint) {
+    const modeSelector = document.getElementById('render-mode');
+
     if (currentMesh) {
         scene.remove(currentMesh);
         currentMesh.dispose();
     }
 
     const { width, height, blocks } = blueprint;
-    const mode = modeSelector.value;
+    const mode = modeSelector ? modeSelector.value : 'solid';
 
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    currentMesh = new THREE.InstancedMesh(geometry, material, blocks.length);
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    currentMesh = new THREE.InstancedMesh(geo, mat, blocks.length);
 
     const dummy = new THREE.Object3D();
-    const colorObj = new THREE.Color();
-    let instanceId = 0;
+    const col = new THREE.Color();
     const zScale = 4;
 
-    for (const block of blocks) {
+    blocks.forEach((block, id) => {
         const zLayer = block.z + 1;
-        const [b, g, r] = block.color;
-        const blockWidth = block.w;
-
-        const posX = (block.x + (blockWidth - 1) / 2) - (width / 2);
+        const posX = (block.x + (block.w - 1) / 2) - (width / 2);
         const posY = -(block.y - (height / 2));
         let posZ = 0;
 
         if (mode === 'solid') {
-            const totalDepth = zLayer * zScale;
-            posZ = totalDepth / 2;
-            dummy.scale.set(blockWidth * 0.95, 0.95, totalDepth);
+            const depth = zLayer * zScale;
+            posZ = depth / 2;
+            dummy.scale.set(block.w * 0.95, 0.95, depth);
         } else if (mode === 'floating') {
             posZ = zLayer * zScale;
-            dummy.scale.set(blockWidth * 0.95, 0.95, 1.0);
-        } else if (mode === 'flat') {
+            dummy.scale.set(block.w * 0.95, 0.95, 1.0);
+        } else {
             posZ = 0;
-            dummy.scale.set(blockWidth * 0.95, 0.95, 0.5);
+            dummy.scale.set(block.w * 0.95, 0.95, 0.5);
         }
 
         dummy.position.set(posX, posY, posZ);
         dummy.updateMatrix();
-        currentMesh.setMatrixAt(instanceId, dummy.matrix);
+        currentMesh.setMatrixAt(id, dummy.matrix);
 
-        colorObj.setRGB(r / 255, g / 255, b / 255);
-        currentMesh.setColorAt(instanceId, colorObj);
-
-        instanceId++;
-    }
+        col.setRGB(block.color[0]/255, block.color[1]/255, block.color[2]/255);
+        currentMesh.setColorAt(id, col);
+    });
 
     currentMesh.instanceMatrix.needsUpdate = true;
     currentMesh.instanceColor.needsUpdate = true;
@@ -187,42 +246,3 @@ function buildLegoScene(blueprint) {
     controls.target.set(0, 0, 0);
     controls.update();
 }
-
-// --- Export Logic (Bonus 3) ---
-function downloadFile(blob, filename) {
-    const link = document.createElement('a');
-    link.style.display = 'none';
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-document.getElementById('btn-export-png').addEventListener('click', () => {
-    renderer.render(scene, camera);
-    const dataURL = renderer.domElement.toDataURL('image/png');
-
-    const link = document.createElement('a');
-    link.href = dataURL;
-    link.download = `${currentFilename}_3d_snapshot.png`;
-    link.click();
-});
-
-document.getElementById('btn-export-json').addEventListener('click', () => {
-    if (!cachedBlueprint) return;
-    const jsonStr = JSON.stringify(cachedBlueprint, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    downloadFile(blob, `${currentFilename}_blueprint.json`);
-});
-
-document.getElementById('btn-export-mesh').addEventListener('click', () => {
-    if (!currentMesh) return;
-
-    const exporter = new THREE.GLTFExporter();
-    exporter.parse(scene, (gltf) => {
-        const jsonStr = JSON.stringify(gltf);
-        const blob = new Blob([jsonStr], { type: 'text/plain' });
-        downloadFile(blob, `${currentFilename}_3d_mesh.gltf`);
-    }, { binary: false });
-});

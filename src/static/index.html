@@ -57,12 +57,25 @@
 
         .form-group { margin-bottom: 20px; }
         label { font-size: 14px; font-weight: bold; margin-bottom: 5px; display: block; }
-        select, input[type="file"] {
+
+        select, input[type="file"], input[type="range"] {
             width: 100%; padding: 8px; margin-bottom: 10px;
             background: var(--bg-body); color: var(--text-main);
             border: 1px solid var(--border-color); border-radius: 4px;
             box-sizing: border-box;
         }
+
+        /* Added specific text styling for the upload constraints */
+        .upload-limits {
+            font-size: 12px; color: var(--text-muted);
+            margin-top: -5px; margin-bottom: 10px; display: block;
+        }
+
+        .checkbox-group {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 20px; font-size: 14px; font-weight: bold;
+        }
+        .checkbox-group input { width: auto; margin: 0; }
 
         button {
             width: 100%; padding: 10px; border: none; border-radius: 4px;
@@ -73,6 +86,7 @@
         button.secondary { background-color: var(--btn-secondary); color: white; margin-bottom: 8px; }
         button.secondary:hover { opacity: 0.9; }
 
+        /* The Status Field is styled here */
         #status {
             margin-top: 15px; font-size: 13px; font-weight: bold;
             padding: 10px; border-radius: 4px; display: none;
@@ -108,6 +122,13 @@
         @media (max-width: 600px) {
             #controls-hint { flex-direction: column; gap: 5px; bottom: 10px; }
         }
+
+        .btn-text {
+            background: none; border: none; color: var(--btn-secondary);
+            cursor: pointer; font-size: 12px; width: auto; padding: 0;
+            text-decoration: underline; font-weight: normal;
+        }
+        .btn-text:hover { color: var(--btn-primary); }
     </style>
 </head>
 <body>
@@ -117,21 +138,41 @@
                 SliceReady3D
                 <button id="theme-toggle" title="Toggle Dark Mode">🌙</button>
             </h1>
-            <p style="font-size: 13px; color: var(--text-muted);">Convert flat images into layered 3D voxel mosaics.</p>
 
             <form id="upload-form">
                 <div class="form-group">
                     <label>1. Upload Image</label>
                     <input type="file" id="image-input" accept="image/png, image/jpeg, image/webp" required>
+                    <span class="upload-limits">Max 5MB (PNG, JPEG, WEBP)</span>
+                </div>
+
+                <div class="form-group" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
+                    <label style="margin: 0;">2. Configuration</label>
+                    <button type="button" id="btn-reset-sliders" class="btn-text">Reset Defaults</button>
                 </div>
 
                 <div class="form-group">
-                    <label>2. Artistic Mode</label>
+                    <label style="font-weight: normal;">Depth layers: <span id="val-layers" style="font-weight: bold;">6</span></label>
+                    <input type="range" id="input-layers" name="depth_layers" min="3" max="10" value="6">
+                </div>
+
+                <div class="form-group">
+                    <label style="font-weight: normal;">Studs (longest side): <span id="val-studs" style="font-weight: bold;">48</span></label>
+                    <input type="range" id="input-studs" name="max_studs" min="16" max="128" value="48">
+                </div>
+
+                <div class="form-group">
+                    <label>3. Render Mode</label>
                     <select id="render-mode">
                         <option value="solid">Voxel Sculpture (3D Printable)</option>
                         <option value="floating">2.5D Exploded Heightmap</option>
                         <option value="flat">Traditional Flat Mosaic</option>
                     </select>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="ai-palette" disabled>
+                    <label for="ai-palette" style="margin: 0; color: var(--text-muted);">AI-Curated Palette (Coming Soon)</label>
                 </div>
 
                 <button type="submit" class="primary">Build Mosaic</button>
@@ -140,7 +181,7 @@
             <div id="status"></div>
 
             <div id="export-container">
-                <label>3. Scene Export</label>
+                <label>Scene Export</label>
                 <div style="margin-top: 10px;">
                     <button id="btn-export-mesh" class="secondary">🧊 Download 3D Mesh (GLTF)</button>
                     <button id="btn-export-png" class="secondary">📷 Download Snapshot (PNG)</button>
@@ -149,7 +190,7 @@
             </div>
 
             <div id="inventory-container">
-                <label>4. Color Inventory</label>
+                <label>Color Inventory</label>
                 <div class="inventory-grid" id="inventory-grid"></div>
             </div>
         </div>
